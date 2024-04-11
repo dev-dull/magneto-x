@@ -22,11 +22,11 @@ update_os() {
     # 确保替换下面的路径为你实际的文件路径
     # sudo cp /path/to/source /path/to/destination
     cd /home/pi/magnetox-os-update
-    cp auto-uuid/*  ~/auto-uuid/
-    chmod +x ~/auto-uuid/*.sh
-    chmod +x ~/auto-uuid/MagnetoWifiHelper
-    cp config/* ~/printer_data/config/
-    cp KlipperScreen/* ~/KlipperScreen/panels/
+    cp auto-uuid/*  /home/pi/auto-uuid/
+    chmod +x /home/pi/auto-uuid/*.sh
+    chmod +x /home/pi/auto-uuid/MagnetoWifiHelper
+    cp config/* /home/pi/printer_data/config/
+    cp KlipperScreen/* /home/pi/KlipperScreen/panels/
     echo "Files copied successfully."
 
     echo "OS and applications have been updated."
