@@ -37,7 +37,7 @@ current_version=$(curl -s http://127.0.0.1:8880/get_os_version | jq -r '.version
 echo "Current version from URL: $current_version"
 
 # 第二步: 从文件读取版本号
-file_version=$(cat version.txt)
+file_version=$(cat /home/pi/magnetox-os-update/version.txt)
 echo "Version from file: $file_version"
 
 # 提取具体的版本号字符串，例如v1.1.0或v1.1.1
