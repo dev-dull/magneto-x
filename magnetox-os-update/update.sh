@@ -44,15 +44,7 @@ echo "Version from file: $file_version"
 version_from_url=$(echo $current_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
 version_from_file=$(echo $file_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
 
-# 第三步: 对比两个版本号
-if [ "$(printf '%s\n' "$version_from_url" "$version_from_file" | sort -V | head -n 1)" == "$version_from_url" ]; then
-    if [ "$version_from_url" == "$version_from_file" ]; then
-        echo "Both versions are equal."
-    else
-        echo "$version_from_url is older than $version_from_file."
-        # 当前版本较旧，需要更新
-        update_os
-    fi
-else
-    echo "$version_from_file is older than $version_from_url."
-fi
+
+update_os
+
+
