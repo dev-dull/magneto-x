@@ -6,7 +6,7 @@ update_os() {
     
     # 安装Qt相关的开发包
     echo "Installing Qt development packages..."
-    sudo apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
+    echo 'armbian' | sudo apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
     
     # 检查上一条命令是否成功执行
     if [ $? -ne 0 ]; then
