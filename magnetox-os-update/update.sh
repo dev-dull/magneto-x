@@ -28,8 +28,9 @@ update_os() {
     cp config/* /home/pi/printer_data/config/
     cp KlipperScreen/* /home/pi/KlipperScreen/panels/
     echo "Files copied successfully."
-
+    echo 'armbian' | sudo sync
     echo "OS and applications have been updated."
+    echo 'armbian' | sudo reboot
 }
 
 # 第一步: 从URL获取版本号
