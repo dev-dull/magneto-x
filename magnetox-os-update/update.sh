@@ -6,7 +6,7 @@ update_os() {
     
     # 安装Qt相关的开发包
     echo "Installing Qt development packages..."
-    echo 'armbian' | sudo -S apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
+    echo 'armbian' | sudo -S apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5serialport5 libqt5serialport5-dev
     
     # 检查上一条命令是否成功执行
     if [ $? -ne 0 ]; then
@@ -25,6 +25,7 @@ update_os() {
     cp auto-uuid/*  /home/pi/auto-uuid/
     chmod +x /home/pi/auto-uuid/*.sh
     chmod +x /home/pi/auto-uuid/MagnetoWifiHelper
+    chmod +x /home/pi/auto-uuid/Magmotor
     cp config/* /home/pi/printer_data/config/
     cp KlipperScreen/* /home/pi/KlipperScreen/panels/
     echo "Files copied successfully."

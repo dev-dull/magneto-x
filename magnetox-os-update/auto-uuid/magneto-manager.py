@@ -11,7 +11,7 @@ import serial.tools.list_ports
 CONFIG_PATH = "/home/pi/printer_data/config/magneto_device.cfg"
 BACKUP_PATH = "/home/pi/printer_data/config/magneto_device.cfg.bak"
 #VERSION_STR = "magneto-x-mainsailOS-2024-3-1-v1.1.0-mag-beta"
-VERSION_STR = "magneto-x-mainsailOS-2024-4-8-v1.1.1-mag-x"
+VERSION_STR = "magneto-x-mainsailOS-2024-4-15-v1.1.2-mag-x"
 
 app = Flask(__name__)
 serial_connection = None
@@ -40,6 +40,29 @@ def connect_esplm():
     else:
         print(f"Connectd {serial_connection.port}")
         return jsonify({'connected':serial_connection.port})
+
+@app.route('/disconnect_lm', methods=['GET'])
+def disconnect_serial():
+    global serial_connection
+    if serial_connection and serial_connection.is_open:
+        serial_connection.close()
+        print("Serial connection closed.")
+        return jsonify({'info':"Serial connection closed"})
+    else:
+        print("No open serial connection to close.")
+        return jsonify({'info':"No open serial connection to close"})
+
+@app.route('/motor_control', methods=['GET'])
+def linear_motor_debug():
+    try:
+        result = subprocess.run("/home/pi/auto-uuid/mag_motor_control.sh", capture_output=True, text=True, check=True)
+        print(f"mag motor:\n{result.stdout}")
+        print(f"mag motor error\n{result.stderr}")
+    except subprocess.CalledProcessError as e:
+        print(f"mag motor script error{e}")
+    except Exception as e:
+        print(f"mag motor execut error:{e}")
+
 
 @app.route('/send_command', methods=['GET'])
 def send_command():
