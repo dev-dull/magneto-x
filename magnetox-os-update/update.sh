@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 定义update_os函数
+
 update_os() {
     echo "Updating OS to newer version..."
     
