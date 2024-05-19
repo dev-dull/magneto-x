@@ -30,6 +30,14 @@ def connect_to_serial():
 def get_os_version():
     return jsonify({'version':VERSION_STR})
 
+@app.route('/get_git_version', methods=['GET'])
+def get_os_version():
+    version_from_git_branch = subprocess.run("cd /home/pi/magnetox-os-update/ && git rev-parse --abbrev-ref HEAD", capture_output=True, text=True, check=True)
+    version_from_git_commit = subprocess.run("cd /home/pi/magnetox-os-update/ && git rev-parse HEAD", capture_output=True, text=True, check=True)
+    return jsonify({'git_branch':version_from_git_branch, 'git_commit':version_from_git_commit})
+
+
+
 @app.route('/connect_lm', methods=['GET'])
 def connect_esplm():
     global serial_connection
