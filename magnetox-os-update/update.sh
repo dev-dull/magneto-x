@@ -26,7 +26,7 @@ update_os() {
     echo "Files copied successfully."
     echo 'armbian' | sudo sync
     echo "OS and applications have been updated."
-    #echo 'armbian' | sudo reboot
+    echo 'armbian' | sudo reboot
 }
 
 
