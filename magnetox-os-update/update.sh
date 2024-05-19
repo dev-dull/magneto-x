@@ -36,6 +36,13 @@ echo "Current version from URL: $current_version"
 file_version=$(cat /home/pi/magnetox-os-update/version.txt)
 echo "Version from file: $file_version"
 
+version_from_git_branch=$(git rev-parse --abbrev-ref HEAD)
+echo "git branch : $version_from_git_branch"
+
+version_from_git_commit=$(git rev-parse HEAD)
+echo "git commit: $version_from_git_commit"
+
+
 version_from_url=$(echo $current_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
 version_from_file=$(echo $file_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
 

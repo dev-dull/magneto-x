@@ -1,0 +1,1 @@
+git clone -b $1 https://github.com/nmavor/magnetox-os-update /home/pi/magnetox-os-update
