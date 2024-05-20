@@ -22,7 +22,7 @@ def connect_to_serial():
         # print(port.description)
         if "USB Serial" in port.description:
             try:
-                return serial.Serial(port.device, 115_200)
+                return serial.Serial(port.device, 115200)
             except Exception as e:
                 print("Connect failed:")
     return None
