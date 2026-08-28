@@ -95,6 +95,83 @@ def get_git_version():
     )
 
 
+@app.route("/get_timezone", methods=["GET"])
+def get_timezone():
+    # Ported from upstream PR mypeopoly/magnetox-os-update#8 (author: nmavor),
+    # with -p Timezone --value so the raw value is returned rather than the
+    # literal 'Timezone=...' key=value pair.
+    try:
+        timezone = subprocess.run(
+            ["timedatectl", "show", "-p", "Timezone", "--value"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        return (
+            jsonify({"error": f"Failed to read timezone: {e.stderr or e}"}),
+            500,
+        )
+    except OSError as e:
+        return jsonify({"error": f"Failed to read timezone: {e}"}), 500
+    return jsonify({"timezone": timezone.stdout.strip()})
+
+
+@app.route("/set_timezone", methods=["GET", "POST"])
+def set_timezone():
+    new_timezone = request.args.get("timezone", default=None)
+    if new_timezone is None:
+        # No timezone given: geolocate one from the printer's public IP.
+        try:
+            result = subprocess.run(
+                ["curl", "--fail", "https://ipapi.co/timezone"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            return (
+                jsonify(
+                    {
+                        "error": "Failed to look up timezone from ipapi.co: "
+                        f"{e.stderr or e}"
+                    }
+                ),
+                502,
+            )
+        except OSError as e:
+            return (
+                jsonify({"error": f"Failed to look up timezone from ipapi.co: {e}"}),
+                502,
+            )
+        new_timezone = result.stdout.strip()
+        if not new_timezone:
+            return jsonify({"error": "ipapi.co returned an empty timezone"}), 502
+    try:
+        subprocess.run(
+            ["timedatectl", "set-timezone", new_timezone],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        return (
+            jsonify(
+                {
+                    "error": f"Failed to set timezone {new_timezone!r}: "
+                    f"{e.stderr or e}"
+                }
+            ),
+            500,
+        )
+    except OSError as e:
+        return (
+            jsonify({"error": f"Failed to set timezone {new_timezone!r}: {e}"}),
+            500,
+        )
+    return jsonify({"timezone": new_timezone})
+
+
 @app.route("/connect_lm", methods=["GET"])
 def connect_esplm():
     global serial_connection
