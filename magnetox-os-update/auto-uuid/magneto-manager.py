@@ -5,6 +5,7 @@ import socket
 import subprocess
 import shutil
 import glob
+import threading
 import serial
 import serial.tools.list_ports
 
@@ -14,6 +15,10 @@ VERSION_STR = "magneto-x-mainsailOS-2024-5-1-v1.1.3-mag-x"
 
 app = Flask(__name__)
 serial_connection = None
+# Serializes connect/disconnect/write on the shared LM serial connection so a
+# concurrent /connect_lm cannot swap the global mid-write of a /send_command.
+serial_lock = threading.Lock()
+motor_control_process = None
 
 
 def connect_to_serial():
@@ -24,8 +29,24 @@ def connect_to_serial():
             try:
                 return serial.Serial(port.device, 115200)
             except Exception as e:
-                print("Connect failed:")
+                print(f"Connect failed: {e}")
     return None
+
+
+def reconnect_serial():
+    """(Re)establish the shared LM serial connection. Caller holds serial_lock.
+
+    Closes any existing (possibly stale) handle first, then runs the same
+    port-scan logic as /connect_lm. Returns the new connection or None.
+    """
+    global serial_connection
+    if serial_connection is not None:
+        try:
+            serial_connection.close()
+        except Exception:
+            pass
+    serial_connection = connect_to_serial()
+    return serial_connection
 
 
 @app.route("/get_os_version", methods=["GET"])
@@ -35,35 +56,37 @@ def get_os_version():
 
 @app.route("/get_git_version", methods=["GET"])
 def get_git_version():
-    subprocess.run(
-        [
-            "git",
-            "config",
-            "--global",
-            "--add",
-            "safe.directory",
-            "/home/pi/magnetox-os-update",
-        ]
-    )
-    version_from_git_branch = subprocess.run(
-        [
-            "git",
-            "-C",
-            "/home/pi/magnetox-os-update/",
-            "rev-parse",
-            "--abbrev-ref",
-            "HEAD",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    version_from_git_commit = subprocess.run(
-        ["git", "-C", "/home/pi/magnetox-os-update/", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    # -c safe.directory=... scopes the safe-directory grant to this call
+    # instead of appending a duplicate global config entry on every request.
+    git_base = [
+        "git",
+        "-c",
+        "safe.directory=/home/pi/magnetox-os-update",
+        "-C",
+        "/home/pi/magnetox-os-update/",
+    ]
+    try:
+        version_from_git_branch = subprocess.run(
+            git_base + ["rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        version_from_git_commit = subprocess.run(
+            git_base + ["rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        # e.g. /home/pi/magnetox-os-update is absent mid-update (the _UPDATE_OS
+        # macro deletes it before re-cloning) or is not a git repo.
+        return (
+            jsonify({"error": f"git version query failed: {e.stderr or e}"}),
+            500,
+        )
+    except OSError as e:
+        return jsonify({"error": f"git version query failed: {e}"}), 500
     return jsonify(
         {
             "git_branch": version_from_git_branch.stdout.replace("\n", ""),
@@ -75,41 +98,48 @@ def get_git_version():
 @app.route("/connect_lm", methods=["GET"])
 def connect_esplm():
     global serial_connection
-    serial_connection = connect_to_serial()
-    if serial_connection is None:
-        return jsonify({"error": "No device foune"})
-    else:
-        print(f"Connectd {serial_connection.port}")
-        return jsonify({"connected": serial_connection.port})
+    with serial_lock:
+        connection = reconnect_serial()
+        if connection is None:
+            return jsonify({"error": "No device found"}), 503
+        print(f"Connected {connection.port}")
+        return jsonify({"connected": connection.port})
 
 
 @app.route("/disconnect_lm", methods=["GET"])
 def disconnect_serial():
     global serial_connection
-    if serial_connection and serial_connection.is_open:
-        serial_connection.close()
-        print("Serial connection closed.")
-        return jsonify({"info": "Serial connection closed"})
-    else:
+    with serial_lock:
+        if serial_connection is not None and serial_connection.is_open:
+            serial_connection.close()
+            # Drop the handle: a closed pyserial Serial is still truthy, and a
+            # lingering closed-but-truthy global silently disabled every later
+            # LM enable (see issue #47).
+            serial_connection = None
+            print("Serial connection closed.")
+            return jsonify({"info": "Serial connection closed"})
+        serial_connection = None
         print("No open serial connection to close.")
         return jsonify({"info": "No open serial connection to close"})
 
 
 @app.route("/motor_control", methods=["GET"])
 def linear_motor_debug():
+    global motor_control_process
+    if motor_control_process is not None and motor_control_process.poll() is None:
+        return jsonify({"error": "Magmotor GUI is already running"}), 409
     try:
-        result = subprocess.run(
-            "/home/pi/auto-uuid/mag_motor_control.sh",
-            capture_output=True,
-            text=True,
-            check=True,
+        # mag_motor_control.sh launches the Magmotor Qt GUI on the printer's
+        # touchscreen; it requires a running X session (the script exports
+        # DISPLAY=:0). Launch via Popen so this handler returns immediately
+        # instead of blocking for the lifetime of the GUI (which made the
+        # macro's 2s curl timeout trip on every call).
+        motor_control_process = subprocess.Popen(
+            ["/home/pi/auto-uuid/mag_motor_control.sh"]
         )
-        print(f"mag motor:\n{result.stdout}")
-        print(f"mag motor error\n{result.stderr}")
-    except subprocess.CalledProcessError as e:
-        print(f"mag motor script error{e}")
+        return jsonify({"suc": "Magmotor GUI launched"})
     except Exception as e:
-        print(f"mag motor execut error:{e}")
+        return jsonify({"error": f"Failed to launch Magmotor GUI: {e}"}), 500
 
 
 @app.route("/send_command", methods=["GET"])
@@ -118,15 +148,42 @@ def send_command():
     command = request.args.get("command")
     if not command:
         return jsonify({"error": "Missing required parameter: command"}), 400
+    data = (command + "\n").encode()
 
-    if not serial_connection:
-        return jsonify({"error": "Serial port not connected"})
+    with serial_lock:
+        # Guard against both a never-connected port and a closed-but-truthy
+        # handle left behind by /disconnect_lm; attempt one reconnect before
+        # failing (the LM board may have enumerated late or re-enumerated).
+        if serial_connection is None or not serial_connection.is_open:
+            if reconnect_serial() is None:
+                return (
+                    jsonify(
+                        {"error": "Serial port not connected and reconnect failed"}
+                    ),
+                    503,
+                )
 
-    try:
-        serial_connection.write((command + "\n").encode())
-        return jsonify({"suc": "Send success"})
-    except Exception as e:
-        return jsonify({"error": "Send failed"})
+        try:
+            serial_connection.write(data)
+            return jsonify({"suc": "Send success"})
+        except Exception as first_error:
+            # The write failed on an open-looking port (e.g. USB dropped):
+            # attempt one reconnect, then retry the write once.
+            if reconnect_serial() is None:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Send failed ({first_error}); "
+                            "reconnect failed"
+                        }
+                    ),
+                    503,
+                )
+            try:
+                serial_connection.write(data)
+                return jsonify({"suc": "Send success (after reconnect)"})
+            except Exception as e:
+                return jsonify({"error": f"Send failed after reconnect: {e}"}), 503
 
 
 @app.route("/auto_resize_filesystem", methods=["GET"])
