@@ -411,7 +411,7 @@ def get_ip():
 def get_mcu_uuid():
     if not os.path.exists(CONFIG_PATH):
         print("Error: Config file not found at", CONFIG_PATH)
-        return jsonify({"error": "Config file not found"})
+        return jsonify({"error": "Config file not found"}), 404
 
     devices = get_serial_devices()
     for device in devices:
