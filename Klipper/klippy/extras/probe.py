@@ -5,7 +5,6 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 import logging
 import pins
-import time
 from . import manual_probe
 
 HINT_TIMEOUT = """
@@ -158,16 +157,11 @@ class PrinterProbe:
                                        self.samples_retries, minval=0)
         samples_result = gcmd.get("SAMPLES_RESULT", self.samples_result)
         must_notify_multi_probe = not self.multi_probe_pending
-        toolhead = self.printer.lookup_object('toolhead')
-        load_cell = self.printer.lookup_object('magneto_load_cell')
         if must_notify_multi_probe:
             self.multi_probe_begin()
         probexy = self.printer.lookup_object('toolhead').get_position()[:2]
         retries = 0
         positions = []
-        # if load_cell is not None:
-        #     load_cell.clear_load_cell()
-        #     toolhead.dwell(1.)
         while len(positions) < sample_count:
             # Probe position
             pos = self._probe(speed)
