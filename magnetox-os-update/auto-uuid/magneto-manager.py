@@ -9,7 +9,7 @@ import serial
 import serial.tools.list_ports
 
 CONFIG_PATH = "/home/pi/printer_data/config/magneto_device.cfg"
-BACKUP_PATH = "/home/pi/printer_data/config/magneto_device.cfg.bak"
+BACKUP_PATH = "/home/pi/printer_data/config/magneto_device.cfg.backup"
 VERSION_STR = "magneto-x-mainsailOS-2024-5-1-v1.1.3-mag-x"
 
 app = Flask(__name__)
@@ -115,19 +115,18 @@ def linear_motor_debug():
 @app.route("/send_command", methods=["GET"])
 def send_command():
     global serial_connection
+    command = request.args.get("command")
+    if not command:
+        return jsonify({"error": "Missing required parameter: command"}), 400
+
     if not serial_connection:
-        return jsonify({"error": "Serial port no connected"})
+        return jsonify({"error": "Serial port not connected"})
 
-    command = request.args.get("command") + "\n"
-
-    if command:
-        try:
-            serial_connection.write(command.encode())
-            return jsonify({"suc": "Send success"})
-        except Exception as e:
-            return jsonify({"error": "Send failed"})
-    else:
-        return jsonify({"error": "Invalid command"})
+    try:
+        serial_connection.write((command + "\n").encode())
+        return jsonify({"suc": "Send success"})
+    except Exception as e:
+        return jsonify({"error": "Send failed"})
 
 
 @app.route("/auto_resize_filesystem", methods=["GET"])
@@ -137,17 +136,34 @@ def auto_resize_filesystem():
         print("resize filesystem")
         return jsonify({"success": output})
     except subprocess.CalledProcessError as e:
-        return jsonify({"success": f"Error occurred while resize filesystem: {e}"})
+        return (
+            jsonify(
+                {
+                    "error": "Error occurred while resizing filesystem: "
+                    + format_called_process_error(e)
+                }
+            ),
+            500,
+        )
 
 
 def run_command(command):
-    try:
-        output = subprocess.check_output(
-            command, shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8")
-        return output
-    except subprocess.CalledProcessError as e:
-        return e.output.decode("utf-8")
+    """Run a shell command and return its output.
+
+    Raises subprocess.CalledProcessError (with combined stdout/stderr attached
+    as e.output) on a non-zero exit, so callers can distinguish failure output
+    from real results instead of having errors silently fed downstream.
+    """
+    return subprocess.check_output(
+        command, shell=True, stderr=subprocess.STDOUT
+    ).decode("utf-8")
+
+
+def format_called_process_error(e):
+    output = e.output
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", "replace")
+    return f"command failed (exit {e.returncode}): {output}"
 
 
 def extract_uuids(output):
@@ -161,18 +177,29 @@ def backup_config_file(filename):
 
 
 def modify_config_file(filename, uuid):
+    """Replace the canbus_uuid line in the config file.
+
+    Returns True if a canbus_uuid line was found and rewritten, False if the
+    file contains no canbus_uuid line (in which case the file is untouched).
+    """
     with open(filename, "r") as file:
         lines = file.readlines()
 
+    found = False
     for index, line in enumerate(lines):
         if "canbus_uuid:" in line:
             lines[index] = f"canbus_uuid: {uuid}\n"
+            found = True
             break
+
+    if not found:
+        return False
 
     with open(filename, "w") as file:
         file.writelines(lines)
         file.flush()
         os.fsync(file.fileno())
+    return True
 
     ## mcu uuid get
 
@@ -187,31 +214,49 @@ def backup_config():
 
 
 def update_config_file(device):
+    """Point the [mcu] serial: line at the given device.
+
+    Returns True if the config file was updated (an existing serial: line was
+    rewritten, or a new [mcu] section was appended because none existed).
+    Returns False if nothing was written — no device given, or an [mcu]
+    section exists but has no serial: line to rewrite.
+    """
     if not device:
-        return
+        return False
 
     with open(CONFIG_PATH, "r") as file:
         content = file.readlines()
 
     mcu_section_found = False
+    updated = False
     for index, line in enumerate(content):
         if line.strip() == "[mcu]":
             mcu_section_found = True
 
-            while "serial:" not in content[index] and content[index].strip() != "":
+            while (
+                index < len(content)
+                and "serial:" not in content[index]
+                and content[index].strip() != ""
+            ):
                 index += 1
-            if "serial:" in content[index]:
+            if index < len(content) and "serial:" in content[index]:
                 content[index] = "serial: {}\n".format(device)
+                updated = True
                 break
 
     if not mcu_section_found:
         content.append("\n[mcu]\n")
         content.append("serial: {}\n".format(device))
+        updated = True
+
+    if not updated:
+        return False
 
     with open(CONFIG_PATH, "w") as file:
         file.writelines(content)
         file.flush()
         os.fsync(file.fileno())
+    return True
 
 
 @app.route("/get-ip", methods=["GET"])
@@ -235,28 +280,34 @@ def get_mcu_uuid():
         return jsonify({"error": "Config file not found"})
 
     devices = get_serial_devices()
-    if len(devices) > 0:
-        for device in devices:
-            if device.startswith("/dev/serial/by-id/usb-Klipper"):
-                return jsonify({"mcu-uuid": device})
+    for device in devices:
+        if device.startswith("/dev/serial/by-id/usb-Klipper"):
+            return jsonify({"mcu-uuid": device})
+    return jsonify({"error": "No Klipper MCU serial device found"}), 404
 
 
 @app.route("/set-mcu-uuid", methods=["GET"])
 def set_mcu_uuid():
     if not os.path.exists(CONFIG_PATH):
         print("Error: Config file not found at", CONFIG_PATH)
-        return jsonify({"error": "Config file not found"})
+        return jsonify({"error": "Config file not found"}), 404
 
     devices = get_serial_devices()
-    if len(devices) > 0:
-        for device in devices:
-            if device.startswith("/dev/serial/by-id/usb-Klipper"):
-                backup_config()
-                update_config_file(device)
+    for device in devices:
+        if device.startswith("/dev/serial/by-id/usb-Klipper"):
+            backup_config()
+            if update_config_file(device):
                 return jsonify({"mcu-uuid-success": device})
-
-    else:
-        return jsonify({"error": "No MCU uuid found"})
+            return (
+                jsonify(
+                    {
+                        "error": "[mcu] section has no serial: line to update; "
+                        "config file left unchanged"
+                    }
+                ),
+                500,
+            )
+    return jsonify({"error": "No MCU uuid found"}), 404
 
 
 @app.route("/set-can-uuid", methods=["GET"])
@@ -265,24 +316,39 @@ def set_can_uuid():
 
     # 检查文件是否存在
     if not os.path.exists(config_path):
-        return jsonify({"error": f"{config_path} not found!"})
-
-    # 执行备份
-    backup_config_file(config_path)
+        return jsonify({"error": f"{config_path} not found!"}), 404
 
     command = (
         "/home/pi/klippy-env/bin/python /home/pi/klipper/scripts/canbus_query.py can0"
     )
-    output = run_command(command)
+    try:
+        output = run_command(command)
+    except subprocess.CalledProcessError as e:
+        return (
+            jsonify({"error": "canbus_query.py " + format_called_process_error(e)}),
+            500,
+        )
     uuids = extract_uuids(output)
 
     # 判断uuids的数量并取适当的值
     if len(uuids) == 2:
         uuid_to_use = uuids[-1]
-        modify_config_file(config_path, uuid_to_use)
-        return jsonify({"suc": "set canbus uuid successful"})
+        # Only overwrite the last-good .backup once the new state has been
+        # validated — a failed query must not destroy the rollback copy.
+        backup_config_file(config_path)
+        if modify_config_file(config_path, uuid_to_use):
+            return jsonify({"suc": "set canbus uuid successful"})
+        return (
+            jsonify(
+                {
+                    "error": "no canbus_uuid: line found in config; "
+                    "config file left unchanged"
+                }
+            ),
+            500,
+        )
     else:
-        return jsonify({"error": f"only {len(uuid_to_use)}  found!"})
+        return jsonify({"error": f"only {len(uuids)} canbus uuids found!"}), 500
 
 
 @app.route("/get-can-uuid", methods=["GET"])
@@ -290,7 +356,13 @@ def get_can_uuid():
     command = (
         "/home/pi/klippy-env/bin/python /home/pi/klipper/scripts/canbus_query.py can0"
     )
-    output = run_command(command)
+    try:
+        output = run_command(command)
+    except subprocess.CalledProcessError as e:
+        return (
+            jsonify({"error": "canbus_query.py " + format_called_process_error(e)}),
+            500,
+        )
     uuids = extract_uuids(output)
 
     return jsonify({"can-uuids": uuids})
