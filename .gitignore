@@ -1,1 +1,4 @@
 .claude/
+
+# OTA payload build output (scripts/build-ota-payload.sh)
+dist/
