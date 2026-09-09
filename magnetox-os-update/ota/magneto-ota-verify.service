@@ -1,0 +1,22 @@
+# magneto-ota-verify.service — boot-time OTA consistency check.
+#
+# If a previous update died mid-apply (power loss), the engine left an
+# apply-in-progress marker; --verify-or-restore rolls the printer back to
+# the pre-update backup. When no marker exists this exits immediately.
+#
+# Enabled at boot by bootstrap-ota.sh (`systemctl enable`).
+
+[Unit]
+Description=Magneto X OTA boot-time verify/restore
+# Run before the printer stack would read possibly-inconsistent config.
+Before=klipper.service moonraker.service KlipperScreen.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/pi/magneto-ota/ota-update.sh --verify-or-restore
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

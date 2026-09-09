@@ -1,0 +1,26 @@
+# magneto-ota.service — run one Magneto X OTA update pass.
+#
+# Started on demand (never enabled at boot):
+#   - by the UPDATE_MAGNETO_OS gcode macro via
+#     `sudo -n systemctl start --no-block magneto-ota.service`
+#   - or manually: `sudo systemctl start magneto-ota.service`
+#
+# Type=oneshot WITHOUT RemainAfterExit so the unit is re-triggerable; while
+# a run is active a second `systemctl start` joins the active job. The
+# authoritative concurrency guard is the engine's own flock, not systemd.
+
+[Unit]
+Description=Magneto X OTA update
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/pi/magneto-ota/ota-update.sh
+# Journal keeps the full log; the status JSON at /home/pi/magneto-ota/status
+# is the machine-readable summary surfaced by the OTA_STATUS macro.
+StandardOutput=journal
+StandardError=journal
+
+# No [Install] section on purpose: this unit is start-only, never enabled.
