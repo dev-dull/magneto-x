@@ -1,0 +1,16 @@
+# /home/pi/magneto-ota/ota.conf — Magneto X OTA update configuration.
+# Sourced (as shell) by ota-update.sh. Copy to /home/pi/magneto-ota/ota.conf
+# and edit; bootstrap-ota.sh writes these defaults if no ota.conf exists.
+
+# GitHub repository whose Releases carry the OTA payloads
+# (magneto-x-ota-<version>.tar.gz + manifest.json).
+OTA_REPO="dev-dull/magneto-x"
+
+# "latest" follows the newest GitHub release; a specific tag (e.g. "v1.2.0")
+# pins to that release.
+OTA_CHANNEL="latest"
+
+# Optional: full URL of a self-hosted mirror directory that serves
+# manifest.json and magneto-x-ota-<version>.tar.gz. When set, GitHub is not
+# contacted at all and OTA_REPO/OTA_CHANNEL are ignored.
+#OTA_BASE_URL="https://updates.example.com/magneto-x"
