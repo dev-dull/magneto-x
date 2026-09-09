@@ -1,53 +1,37 @@
 #!/bin/bash
+# DEPRECATED — this git-clone based update flow has been replaced.
+#
+# The Magneto X OTA update now runs from GitHub Releases via a systemd
+# service, with version gating, checksums, backups, atomic installs and
+# rollback. See magnetox-os-update/ota/README.md.
+#
+# Anyone following old instructions ("clone and run update.sh") lands here;
+# hand them off to the new bootstrap when it is available beside this stub.
 
+set -u
 
-update_os() {
-    echo "Updating OS to newer version..."
-    
-    echo "Installing Qt development packages..."
-    echo 'armbian' | sudo -S apt-get update
-    echo 'armbian' | sudo -S apt-get install -y qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libqt5serialport5 libqt5serialport5-dev
-    
-    if [ $? -ne 0 ]; then
-        echo "Failed to install Qt development packages. Exiting..."
-        exit 1
-    fi
-    
-    echo "Qt development packages installed successfully."
-    
-    echo "Copying necessary files..."
-    cd /home/pi/magnetox-os-update
-    cp auto-uuid/*  /home/pi/auto-uuid/
-    chmod +x /home/pi/auto-uuid/*.sh
-    chmod +x /home/pi/auto-uuid/MagnetoWifiHelper
-    chmod +x /home/pi/auto-uuid/Magmotor
-    cp config/* /home/pi/printer_data/config/
-    cp config/Line_Purge.cfg /home/pi/printer_data/config/KAMP/
-    cp KlipperScreen/* /home/pi/KlipperScreen/panels/
-    echo "Files copied successfully."
-    echo 'armbian' | sudo sync
-    echo "OS and applications have been updated."
-    echo 'armbian' | sudo reboot
-}
+echo "=============================================================="
+echo " update.sh is DEPRECATED."
+echo ""
+echo " The Magneto X OTA update has been redesigned. It now installs"
+echo " from GitHub Releases via a systemd service (magneto-ota) with"
+echo " version gating, checksums, backups and rollback."
+echo ""
+echo " Documentation: magnetox-os-update/ota/README.md"
+echo " (https://github.com/dev-dull/magneto-x)"
+echo "=============================================================="
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/ota/bootstrap-ota.sh" ]; then
+    echo ""
+    echo " Handing off to the new bootstrap: $SCRIPT_DIR/ota/bootstrap-ota.sh"
+    echo ""
+    exec bash "$SCRIPT_DIR/ota/bootstrap-ota.sh"
+fi
 
-current_version=$(curl -s http://127.0.0.1:8880/get_os_version | jq -r '.version')
-echo "Current version from URL: $current_version"
-
-file_version=$(cat /home/pi/magnetox-os-update/version.txt)
-echo "Version from file: $file_version"
-
-version_from_git_branch=$(cd /home/pi/magnetox-os-update/ && git rev-parse --abbrev-ref HEAD)
-echo "git branch : $version_from_git_branch"
-
-version_from_git_commit=$(cd /home/pi/magnetox-os-update/ && git rev-parse HEAD)
-echo "git commit: $version_from_git_commit"
-
-
-version_from_url=$(echo $current_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
-version_from_file=$(echo $file_version | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+')
-
-
-update_os
-
-
+echo ""
+echo " To migrate this printer, run the new bootstrap:"
+echo "   curl -fsSL -o bootstrap-ota.sh https://raw.githubusercontent.com/dev-dull/magneto-x/main/magnetox-os-update/ota/bootstrap-ota.sh"
+echo "   less bootstrap-ota.sh   # inspect it"
+echo "   bash bootstrap-ota.sh"
+exit 1
