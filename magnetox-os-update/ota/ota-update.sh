@@ -179,6 +179,8 @@ atomic_install() {
     case "$dest" in
         /home/pi/*) chown pi:pi "$tmp" 2>/dev/null || true ;;
     esac
+    # GNU coreutils sync(1) (>= 8.24, always true on Armbian) fsyncs the
+    # named file; do not port this to BSD sync, which ignores arguments.
     sync "$tmp" || return 1
     mv -f "$tmp" "$dest" || return 1
 }
@@ -301,7 +303,8 @@ phase_preflight() {
     if [ -n "$OTA_BASE_URL" ]; then
         probe_url="${OTA_BASE_URL%/}/manifest.json"
     fi
-    if ! curl -fsI --max-time 15 "$probe_url" >/dev/null 2>&1; then
+    # Plain GET (body discarded): some static mirrors mishandle HEAD.
+    if ! curl -fsS --max-time 15 -o /dev/null "$probe_url" 2>/dev/null; then
         die "network check failed (cannot reach $probe_url) — check connectivity and try again"
     fi
 }
